@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend-py
+    container_name: cangateway-backend
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  tcp-simulator:
+    build: ./backend-py
+    container_name: cangateway-simulator
+    command: python tcp_server.py --boards 3 --port 8001
+    ports:
+      - "8001:8001"
+    restart: unless-stopped

@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+requests
+pyserial
+python-can[canalystii]
+pyusb
+libusb
+psycopg2-binary
+python-dotenv

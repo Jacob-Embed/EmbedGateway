@@ -1,0 +1,162 @@
+// CANGateway Database Schema
+// Run: prisma db push (or prisma migrate dev)
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Boards ──────────────────────────────────────────────────────────────
+
+model Board {
+  id        String    @id                    // "192.168.2.2:5000" or "USB:CAN2"
+  name      String    @default("")
+  ip        String    @default("")
+  port      Int       @default(0)
+  status    String    @default("offline")    // "online" | "offline"
+  lastSeen  DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  config       BoardConfig?
+  timerPresets TimerPreset[]
+  inputRules   InputRule[]
+  logs         BoardLog[]
+  commLogs     CommLog[]
+  sensorData   SensorReading[]
+  connections  ConnectionHistory[]
+}
+
+// ── Board Configuration ─────────────────────────────────────────────────
+
+model BoardConfig {
+  id          Int       @id @default(autoincrement())
+  boardId     String    @unique
+  board       Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  boardName   String    @default("")
+  outputNames String[]  @default([])   // 15 custom names
+  inputNames  String[]  @default([])   // 4 custom names
+
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// ── Timer Presets ───────────────────────────────────────────────────────
+
+model TimerPreset {
+  id          Int       @id @default(autoincrement())
+  boardId     String
+  board       Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  name        String    @default("")
+  outputs     Json      // [{outputIndex, onDelaySec, offDelaySec, onAuto, offAuto}, ...]
+  durationSec Int       @default(0)
+  enabled     Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  linkedRules InputRule[]
+}
+
+// ── Input Emitter Rules ─────────────────────────────────────────────────
+
+model InputRule {
+  id            Int          @id @default(autoincrement())
+  boardId       String
+  board         Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  name          String       @default("")
+  inputIndex    Int          @default(0)          // 0-3 (DI1-DI4)
+  trigger       String       @default("high")     // "high" | "low"
+  actions       Json                              // [{outputIndex, value}, ...]
+  enabled       Boolean      @default(true)
+
+  linkedTimerId Int?
+  linkedTimer   TimerPreset? @relation(fields: [linkedTimerId], references: [id], onDelete: SetNull)
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+}
+
+// ── Board Logs (state change history) ───────────────────────────────────
+
+model BoardLog {
+  id        Int      @id @default(autoincrement())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  type      String                     // "output" | "input" | "timer" | "rule"
+  index     Int                        // output/input index (0-14 or 0-3)
+  value     Boolean                    // ON/OFF or HIGH/LOW
+  label     String
+
+  timestamp DateTime @default(now())
+
+  @@index([boardId, timestamp])
+  @@index([boardId, type])
+}
+
+// ── Communication Logs (raw CAN frames) ─────────────────────────────────
+
+model CommLog {
+  id        Int      @id @default(autoincrement())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  direction String                     // "tx" | "rx"
+  rawFrame  String                     // "200#0B" or "100#0400"
+
+  timestamp DateTime @default(now())
+
+  @@index([boardId, timestamp])
+  @@index([direction])
+}
+
+// ── Sensor Readings (for historical graphs) ─────────────────────────────
+
+model SensorReading {
+  id        Int      @id @default(autoincrement())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  canId     String                     // "200"
+  values    Json                       // [11, 67, 85] — parsed byte values
+
+  timestamp DateTime @default(now())
+
+  @@index([boardId, canId, timestamp])
+}
+
+// ── Connection History (uptime tracking) ─────────────────────────────────
+
+model ConnectionHistory {
+  id            Int       @id @default(autoincrement())
+  boardId       String
+  board         Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  connectedAt   DateTime  @default(now())
+  disconnectedAt DateTime?
+  reason        String?                // "manual" | "timeout" | "error"
+
+  @@index([boardId, connectedAt])
+}
+
+// ── User Settings ───────────────────────────────────────────────────────
+
+model UserSettings {
+  id              Int      @id @default(autoincrement())
+  key             String   @unique       // "theme", "encoding", "sensorDelimiter", etc.
+  value           String                 // JSON string of the setting value
+
+  updatedAt       DateTime @updatedAt
+}
