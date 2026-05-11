@@ -15,6 +15,7 @@ import { TcpProvider } from "./contexts/TcpContext";
 import { BoardProvider } from "./contexts/BoardContext";
 import BoardControl from "./pages/BoardControl";
 import BoardConfig from "./pages/BoardConfig";
+import OtaUpdate from "./pages/OtaUpdate";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ const App = () => (
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/board-logs" element={<CrefMessages />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/ota" element={<OtaUpdate />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </DashboardLayout>

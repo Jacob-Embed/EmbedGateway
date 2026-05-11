@@ -15,6 +15,7 @@ from config.routes import router as config_router
 from logs.routes import router as logs_router
 from history.routes import router as history_router
 from serial_bridge import router as serial_router
+from ota.routes import router as ota_router
 from database import connect_db, disconnect_db, prune_history
 
 
@@ -37,6 +38,7 @@ app.include_router(config_router)
 app.include_router(logs_router)
 app.include_router(history_router)
 app.include_router(serial_router)
+app.include_router(ota_router)
 
 
 _prune_task: asyncio.Task | None = None
@@ -68,7 +70,7 @@ async def startup():
         _prune_task = asyncio.create_task(_prune_loop())
     suffix = " (DB connected)" if db_ok else " (DB OFFLINE — bridge & control only)"
     print(f"[startup] CANGateway backend ready{suffix}")
-    print("[startup] Modules: boards, connect, config, logs, history, status, serial")
+    print("[startup] Modules: boards, connect, config, logs, history, status, serial, ota")
 
 
 @app.on_event("shutdown")

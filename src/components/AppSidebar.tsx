@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Activity,
   Usb,
+  UploadCloud,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -42,6 +43,10 @@ const controlItems = [
 const monitorItems = [
   { title: "Server Monitor", url: "/server-monitor", icon: Server },
   { title: "Logs", url: "/logs", icon: ScrollText },
+];
+
+const firmwareItems = [
+  { title: "OTA", url: "/ota", icon: UploadCloud },
 ];
 
 export function AppSidebar() {
@@ -92,6 +97,7 @@ export function AppSidebar() {
         {renderGroup("Main", mainItems)}
         {renderGroup("Control", controlItems)}
         {renderGroup("Monitor", monitorItems)}
+        {renderGroup("Firmware", firmwareItems)}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>

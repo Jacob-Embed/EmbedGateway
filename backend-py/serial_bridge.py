@@ -15,6 +15,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from protocol import CrefFrame, decode_board_state
 from boards.service import board_registry, register_board, update_board
 from history_recorder import log_state_bulk_bg, record_frame_bg
+import bus_manager
 
 router = APIRouter(tags=["serial"])
 
@@ -263,13 +264,49 @@ async def websocket_serial_bridge(websocket: WebSocket):
             board_id = f"USB:CAN{channel+1}"
             await register_board(board_id, f"USB-CAN-B:CAN{channel+1}", bitrate)
             print(f"[serial] Board {board_id} registered (canalystii ch{channel} @ {bitrate})")
+            bus_manager.telemetry_attach(channel)
+
+            async def _yield_to_ota_if_requested():
+                """If OTA wants the bus, close it, wait for OTA to finish, reopen."""
+                nonlocal bus
+                if not bus_manager.is_ota_active(channel):
+                    return
+                print(f"[serial] OTA takeover requested on CAN{channel+1} — releasing bus")
+                try:
+                    bus.shutdown()
+                except Exception:
+                    pass
+                bus_manager.signal_telemetry_released(channel)
+                # Wait for OTA to clear the flag (poll cheaply; ota_active is an asyncio.Event).
+                while bus_manager.is_ota_active(channel) and bridge_open:
+                    await asyncio.sleep(0.2)
+                if not bridge_open:
+                    return
+                # Reopen on the same params.
+                try:
+                    bus = can.Bus(interface="canalystii", channel=channel, bitrate=bitrate)
+                    print(f"[serial] CAN{channel+1} reopened after OTA")
+                    try:
+                        await websocket.send_json({"status": "SERIAL_RECONNECTED",
+                                                   "message": f"USB-CAN-B CAN{channel+1} reattached after OTA"})
+                    except Exception:
+                        pass
+                except Exception as exc:
+                    print(f"[serial] failed to reopen CAN{channel+1} after OTA: {exc}")
+                    try:
+                        await websocket.send_json({"error": f"failed to reopen after OTA: {exc}"})
+                    except Exception:
+                        pass
 
             async def can_to_ws():
                 """Read CAN frames and forward to WebSocket."""
-                nonlocal bridge_open
+                nonlocal bridge_open, bus
                 loop = asyncio.get_event_loop()
                 try:
                     while bridge_open:
+                        await _yield_to_ota_if_requested()
+                        if not bridge_open:
+                            break
                         msg = await loop.run_in_executor(None, lambda: bus.recv(timeout=0.1))
                         if msg is None:
                             continue
@@ -326,10 +363,15 @@ async def websocket_serial_bridge(websocket: WebSocket):
 
             async def ws_to_can():
                 """Read from WebSocket and send CAN frames."""
-                nonlocal bridge_open
+                nonlocal bridge_open, bus
                 loop = asyncio.get_event_loop()
                 try:
                     while bridge_open:
+                        # Hold off TX while OTA owns the bus — bus may be shut.
+                        while bus_manager.is_ota_active(channel) and bridge_open:
+                            await asyncio.sleep(0.1)
+                        if not bridge_open:
+                            break
                         ws_msg = await websocket.receive()
                         payload = None
                         if "text" in ws_msg and ws_msg["text"] is not None:
@@ -379,7 +421,11 @@ async def websocket_serial_bridge(websocket: WebSocket):
             if board:
                 board.status = "offline"
                 await update_board(board)
-            bus.shutdown()
+            try:
+                bus.shutdown()
+            except Exception:
+                pass
+            bus_manager.telemetry_detach(channel)
 
         else:
             # ── Serial/COM port mode (slcan, etc.) ──
